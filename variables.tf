@@ -118,23 +118,49 @@ variable "query_extra_envs" {
   default     = {}
 }
 
+variable "collector_extra_ports" {
+  type = list(object({
+    port     = number
+    protocol = string
+  }))
+  description = "A list of extra collector ports to open"
+  default     = []
+}
+
+variable "collector_zipkin_enabled" {
+  type    = bool
+  default = false
+}
+
 //
 // Internal use variables
 //
 
 locals {
-  lb_arn               = var.lb_arn == null ? aws_lb.jaeger[0].arn : var.lb_arn
-  name_prefix          = var.name_prefix == null ? "" : "${var.name_prefix}-"
-  tls_policy           = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  collector_extra_envs = <<EOT
-  %{for k in keys(var.collector_extra_envs)~}
-  {
-    "name": "${k}",
-    "value": "${var.collector_extra_envs[k]}"
-  },
-  %{endfor~}
+  lb_arn      = var.lb_arn == null ? aws_lb.jaeger[0].arn : var.lb_arn
+  name_prefix = var.name_prefix == null ? "" : "${var.name_prefix}-"
+  tls_policy  = "ELBSecurityPolicy-TLS-1-2-2017-01"
+
+  zipkin_extra_envs = (!var.collector_zipkin_enabled) ? "" : <<EOT
+    {
+      "name": "COLLECTOR_ZIPKIN_HOST_PORT",
+      "value": ":9411"
+    },
   EOT
-  query_extra_envs     = <<EOT
+
+  collector_extra_envs = join("", [
+    local.zipkin_extra_envs,
+    <<EOT
+    %{for k in keys(var.collector_extra_envs)~}
+    {
+      "name": "${k}",
+      "value": "${var.collector_extra_envs[k]}"
+    },
+    %{endfor~}
+    EOT
+  ])
+
+  query_extra_envs = <<EOT
   %{for k in keys(var.query_extra_envs)~}
   {
     "name": "${k}",
@@ -142,6 +168,27 @@ locals {
   },
   %{endfor~}
   EOT
+
+  zipkin_extra_ports = (!var.collector_zipkin_enabled) ? "" : <<EOT
+  {
+    "containerPort": 9411,
+    "hostPort": 9411,
+    "protocol": "tcp"
+  },
+  EOT
+
+  collector_extra_ports = join("", [
+    local.zipkin_extra_ports,
+    <<EOT
+    %{for p in var.collector_extra_ports~}
+    {
+      "containerPort": ${p.port},
+      "hostPort": ${p.port},
+      "protocol": "${p.protocol}"
+    },
+    %{endfor~}
+    EOT
+  ])
 }
 
 //

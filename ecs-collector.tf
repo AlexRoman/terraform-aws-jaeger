@@ -10,6 +10,7 @@ resource "aws_ecs_task_definition" "jaeger_collector" {
               "name": "${local.name_prefix}jaeger-collector",
               "image": "quay.io/jaegertracing/jaeger-collector:1.23.0",
               "portMappings": [
+                  ${local.collector_extra_ports}
                   {
                       "containerPort": 14250,
                       "hostPort": 14250,
@@ -77,6 +78,15 @@ resource "aws_ecs_service" "jaeger_collector" {
     container_name   = "${local.name_prefix}jaeger-collector"
     container_port   = 14268
   }
+
+  dynamic "load_balancer" {
+    for_each = var.collector_zipkin_enabled ? [1] : []
+    content {
+      target_group_arn = aws_lb_target_group.jaeger_collector_zipkin[0].arn
+      container_name   = "${local.name_prefix}jaeger-collector"
+      container_port   = 9411
+    }
+  }
 }
 
 resource "aws_security_group" "jaeger_collector" {
@@ -109,6 +119,16 @@ resource "aws_security_group" "jaeger_collector" {
     cidr_blocks = [for subnet in data.aws_subnet.selected : subnet.cidr_block]
     protocol    = "tcp"
     description = "Healthcheck"
+  }
+  dynamic "ingress" {
+    for_each = var.collector_zipkin_enabled ? [1] : []
+    content {
+      from_port   = 9411
+      to_port     = 9411
+      cidr_blocks = [for subnet in data.aws_subnet.selected : subnet.cidr_block]
+      protocol    = "tcp"
+      description = "HTTP/Zipkin"
+    }
   }
   egress {
     from_port   = 0

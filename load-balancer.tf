@@ -63,6 +63,34 @@ resource "aws_lb_target_group" "jaeger_collector_http" {
   }
 }
 
+// jaeger-collector zipkin resources
+resource "aws_lb_listener" "jaeger_collector_zipkin" {
+  count             = var.collector_zipkin_enabled ? 1 : 0
+  load_balancer_arn = local.lb_arn
+  protocol          = var.lb_certificate == null ? "TCP" : "TLS"
+  ssl_policy        = var.lb_certificate == null ? null : local.tls_policy
+  certificate_arn   = var.lb_certificate
+  port              = 9411
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.jaeger_collector_zipkin[0].arn
+  }
+}
+
+resource "aws_lb_target_group" "jaeger_collector_zipkin" {
+  count       = var.collector_zipkin_enabled ? 1 : 0
+  tags        = var.tags
+  name        = "${local.name_prefix}jaeger-collector-zipkin"
+  vpc_id      = var.vpc
+  target_type = "ip"
+  protocol    = "TCP"
+  port        = 9411
+  health_check {
+    port = 14269
+    path = "/"
+  }
+}
+
 // jaeger-query resources
 resource "aws_lb_listener" "jaeger_query" {
   load_balancer_arn = local.lb_arn
